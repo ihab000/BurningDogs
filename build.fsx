@@ -23,4 +23,16 @@ Target "hmm_honeypot.exe" (fun _ ->
     )
 )
 
+Target "classify_samples.exe" (fun _ ->
+    ["classify_samples.fs"]
+    |> Fsc (fun p -> 
+        {p with References = 
+            ["packages/Accord/lib/net40/Accord.dll"; 
+             "packages/Accord.Statistics/lib/net40/Accord.Statistics.dll";
+             "packages/Accord.Math/lib/net40/Accord.Math.dll";
+             "packages/Accord.MachineLearning/lib/net40/Accord.MachineLearning.dll"
+            ]}
+    )
+)
+
 RunTargetOrDefault "otx_pulse.exe"
