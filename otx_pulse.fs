@@ -1,5 +1,3 @@
-// #I "Json80r3/Bin/Net40/"
-// #r "Newtonsoft.Json.dll"
 open System
 open System.IO
 open System.Security.Cryptography
@@ -11,9 +9,15 @@ open Newtonsoft.Json.Linq
 open Log
 
 type OtxIndicator = {
-     Type : string; 
-     indicator : string; 
-     description : string
+    Type : string;
+    indicator : string;
+    description : string;
+    expiration : string;
+    content : string;
+    actions : string;
+    role : string;
+    title : string;
+    excerpt : string;
 }
 
 type OtxPulse = {
@@ -24,6 +28,9 @@ type OtxPulse = {
      indicators : OtxIndicator list;
      tags : string list;
      references : string list;
+     attack_ids : string list;
+     groups: int list;
+     malware_families : string list;
 }
 
 type WwwidsRule = {
@@ -60,45 +67,6 @@ type BackdoorRecordNoPayload = {
   payload : string list;
 }
 
-(* 
-// from http://www.fssnip.net/8j
-/// Log levels.
-let Error = 0
-let Warning = 1
-let Information = 2
-let Debug = 3
-
-let LevelToString level =
-  match level with
-    | 0 -> "Error"
-    | 1 -> "Warning"
-    | 2 -> "Information"
-    | 3 -> "Debug"
-    | _ -> "Unknown"
-
-/// The current log level.
-let mutable current_log_level = Debug
-
-/// The inteface loggers need to implement.
-type ILogger = abstract Log : int -> Printf.StringFormat<'a,unit> -> 'a
-
-/// Writes to console.
-let ConsoleLogger = { 
-  new ILogger with
-    member __.Log level format =
-      Printf.kprintf (printfn "[%s][%A] %s" (LevelToString level) DateTime.Now) format
- }
-
-/// Defines which logger to use.
-let mutable DefaultLogger = ConsoleLogger
-
-/// Logs a message with the specified logger.
-let logUsing (logger: ILogger) = logger.Log
-
-/// Logs a message using the default logger.
-let log level message = logUsing DefaultLogger level message
-
-*)
 let config = File.ReadAllLines("application.config") 
              |> Array.map(fun x -> x.Split(':') |> Array.map (fun y -> y.Trim()))  
              |> Array.map(fun x -> (x.[0], x.[1]))
@@ -142,12 +110,22 @@ let getIpPort (code: byte []) : seq<string> =
     let matches = ipportpat.Matches(Encoding.ASCII.GetString(code))
     Seq.map getMatches (Seq.cast matches)
 
-let ipToIndicator (ipstr: string) (description: string) : OtxIndicator option =
+let ipToIndicator (ipstr: string) (role: string) (description: string) : OtxIndicator option =
+    let today = DateTime.Today
     try
         let ip = Net.IPAddress.Parse(ipstr)
+        let ind = {Type = "IPv4";
+                   title = "";
+                   content = "";
+                   role = role;
+                   actions = "";
+                   excerpt = "";
+                   indicator = ip.ToString();
+                   description = description;
+                   expiration = today.AddDays(30.0).ToString("yyyy-MM-dd");}
         match ip.AddressFamily.ToString() with
-        | "InterNetworkV6" -> Some({Type = "IPv6"; indicator = ip.ToString(); description = description})
-        | "InterNetwork"   -> Some({Type = "IPv4"; indicator = ip.ToString(); description = description})
+        | "InterNetworkV6" -> Some({ind with Type = "IPv6"})
+        | "InterNetwork"   -> Some({ind with Type = "IPv4"})
     with
     | :? FormatException as ex -> None
     | :? System.ArgumentNullException as ex -> None
@@ -170,14 +148,23 @@ let botToIndicator(code: byte array) : OtxIndicator list =
     | false -> []
     | true  -> Encoding.ASCII.GetString code 
                |> botToServer 
-               |> Seq.map(fun x -> ipToIndicator x ("Possible IRC server for " + (md5 code))) 
+               |> Seq.map(fun x -> ipToIndicator x "Command & Control" ("Possible IRC server for " + (md5 code))) 
                |> Seq.choose id
                |> List.ofSeq
 
 let fileToIndicator (data: byte array) (description: string) : OtxIndicator list =
     [(md5, "FileHash-MD5"); (sha1, "FileHash-SHA1"); (sha256, "FileHash-SHA256")] 
     |> List.map (fun (fn, fntype) -> (fn data, fntype)) 
-    |> List.map (fun (ind, indtype) -> {Type = indtype; indicator = ind; description = description})
+    |> List.map (fun (ind, indtype) -> {Type = indtype; 
+                                        indicator = ind; 
+                                        description = description;
+                                        expiration = "";
+                                        content = "";
+                                        actions = "";
+                                        role = "";
+                                        title = "";
+                                        excerpt = "";
+                                        })
 
 let tryDownload(url : string) : byte [] option =
     try
@@ -204,21 +191,45 @@ let storeMalware(data : byte []) : string =
     File.WriteAllBytes(filename, data)
     filename
 
-let urlToIndicators (urlstr: string) (description: string) : OtxIndicator list =
+let urlToIndicators (urlstr: string) (role: string) (description: string) : OtxIndicator list =
     log 3 ">>>> urlToIndicators - %s" urlstr
     try 
         let url = new Uri(urlstr.Split('\n').[0])
         let domainToIndicator (uri: Uri) : OtxIndicator list =
             try
-                { Type = "hostname"; indicator = uri.Host; description = ("Hostname associated with " + description)}::( Array.map (fun x -> ipToIndicator (x.ToString()) ("IP address associated with " + description)) (Net.Dns.GetHostAddresses(uri.Host)) |> Array.choose id |> List.ofArray)
+                { Type = "hostname"; 
+                  indicator = uri.Host; 
+                  expiration = "";
+                  content = "";
+                  actions = "";
+                  role = role;
+                  title = "";
+                  excerpt = "";
+                  description = ("Hostname associated with " + description)}::( Array.map (fun x -> ipToIndicator (x.ToString()) role ("IP address associated with " + description)) (Net.Dns.GetHostAddresses(uri.Host)) |> Array.choose id |> List.ofArray)
             with
-            | :? Net.Sockets.SocketException as ex -> [{ Type = "hostname"; indicator = uri.Host; description = ("Hostname associated with " + description)}]
+            | :? Net.Sockets.SocketException as ex -> [{ Type = "hostname"; 
+                                                         indicator = uri.Host; 
+                                                         expiration = "";
+                                                         content = "";
+                                                         actions = "";
+                                                         role = role;
+                                                         title = "";
+                                                         excerpt = "";
+                                                         description = ("Hostname associated with " + description)}]
             | :? StackOverflowException as ex -> []
         let netlocToIndicator (uri: Uri) : OtxIndicator list = 
             match uri.HostNameType.ToString() with
             | "Dns" -> domainToIndicator uri
-            | _     -> List.choose id [ ipToIndicator uri.Host ("IP addresses associated with " + description) ]
-        {Type = "URL"; indicator = url.ToString(); description = description}::(netlocToIndicator url)
+            | _     -> List.choose id [ ipToIndicator uri.Host role ("IP addresses associated with " + description) ]
+        {Type = "URL"; 
+         indicator = url.ToString(); 
+         expiration = "";
+         content = "";
+         actions = "";
+         role = role;
+         title = "";
+         excerpt = "";
+         description = description}::(netlocToIndicator url)
     with
     | :? UriFormatException as ex -> []
     | :? StackOverflowException as ex -> []
@@ -240,7 +251,7 @@ let getKippoUrls (marker:string) (description:string) (lines:string []) : OtxInd
     |> Seq.concat
     |> Set.ofSeq
     |> Set.toSeq
-    |> Seq.map (fun x -> urlToIndicators x description) 
+    |> Seq.map (fun x -> urlToIndicators x "Malware Hosting" description) 
     |> List.concat
     |> Set.ofList
     |> Set.toList
@@ -255,7 +266,7 @@ let telnetlogs (date:DateTime): OtxPulse =
               |> Array.filter(fun x -> x.Contains("HoneyPotTelnetFactory] New connection"))
               |> Array.map(fun x -> x.Split(' ').[4].Split(':').[3])
               |> Set.ofArray
-              |> Set.map(fun x -> ipToIndicator x "Telnet bruteforce client IP")
+              |> Set.map(fun x -> ipToIndicator x "Bruteforce" "Telnet bruteforce client IP")
               |> Set.toList
               |> List.choose id
     log 3 ">>> read IPs"
@@ -271,7 +282,7 @@ let telnetlogs (date:DateTime): OtxPulse =
                     |> Seq.concat
                     |> Set.ofSeq
                     |> Set.toSeq
-                    |> Seq.map (fun x -> urlToIndicators x "URL injected into Telnet honeypot") 
+                    |> Seq.map (fun x -> urlToIndicators x "Malware Hosting" "URL injected into Telnet honeypot") 
                     |> List.concat
     log 3 ">>> read extraurls"
     let contents = extraurls
@@ -292,7 +303,7 @@ let telnetlogs (date:DateTime): OtxPulse =
                        |> Seq.concat
                        |> Seq.distinct
                        |> Seq.map (fun x -> x.Split(':'))
-                       |> Seq.map (fun [|x; y|] -> ipToIndicator x ("Suspected malware C2 on port " + y))
+                       |> Seq.map (fun [|x; y|] -> ipToIndicator x "Command & Control" ("Suspected malware C2 on port " + y))
                        |> Seq.toList
                        |> List.choose id    
     log 3 ">>> got c2 indicators"        
@@ -305,6 +316,9 @@ let telnetlogs (date:DateTime): OtxPulse =
      tags = ["Telnet"; "bruteforce"; "honeypot"]; 
      references = []; 
      TLP = "green"; 
+     attack_ids = ["T1110";];
+     groups = [];
+     malware_families = [];
      description = "Telnet honeypot logs for brute force attackers from a US /32";
      indicators = List.filter (fun x -> Set.contains x.indicator exemptions <> true) (ips @ allurls @ filehashes @ c2indicators)}
 
@@ -319,7 +333,7 @@ let kippologs (date:DateTime): OtxPulse =
               |> Array.map(fun x -> x.Split(':').[0])
               |> Set.ofArray
               |> Set.toList
-              |> List.map(fun x -> ipToIndicator x "SSH bruteforce client IP")
+              |> List.map(fun x -> ipToIndicator x "Bruteforce" "SSH bruteforce client IP")
               |> List.choose id 
     let urls = getKippoUrls "SSHChannel session" "URL injected into SSH honeypot" lines
     let contents = urls
@@ -349,8 +363,11 @@ let kippologs (date:DateTime): OtxPulse =
     {name = "SSH honeypot logs for " + today; 
      Public = true; 
      tags = ["SSH"; "bruteforce"; "honeypot"]; 
-     references = []; 
      TLP = "green"; 
+     references = []; 
+     attack_ids = ["T1110";];
+     groups = [];
+     malware_families = [];
      description = "SSH honeypot logs for brute force attackers from a US /32";
      indicators = List.filter (fun x -> Set.contains x.indicator exemptions <> true) (ips @ filehashes @ dlfilehashes @ urls @ ircservers)}
 
@@ -365,13 +382,13 @@ let pmalogs (date:DateTime): OtxPulse =
                |> Array.map(fun x -> x.Split(' ').[1])
                |> Set.ofArray
                |> Set.toList
-               |> List.map(fun x -> ipToIndicator x "phpMyAdmin attacker client IP")
+               |> List.map(fun x -> ipToIndicator x "Web Attack" "phpMyAdmin attacker client IP")
                |> List.choose id
     let urls = lines
                |> Array.map getUrl
                |> Seq.concat
                |> Seq.distinct
-               |> Seq.map(fun x -> urlToIndicators x "URL injected into phpMyAdmin page")
+               |> Seq.map(fun x -> urlToIndicators x "Malware Hosting" "URL injected into phpMyAdmin page")
                |> Seq.toList 
                |> List.concat
     let contents = urls
@@ -393,6 +410,9 @@ let pmalogs (date:DateTime): OtxPulse =
      Public = true;
      tags = ["phpMyAdmin"; "honeypot"];
      references = [];
+     attack_ids = ["T1110";];
+     groups = [];
+     malware_families = [];
      TLP = "green";
      description = "phpMyAdmin honeypot logs from a US /32";
      indicators = List.filter (fun x -> Set.contains x.indicator exemptions <> true) (ips @ urls @ filehashes @ ircservers)}                
@@ -406,7 +426,7 @@ let wordpotlogs (date:DateTime): OtxPulse =
               |> Array.map(fun x -> x.Split(' ').[1])
               |> Set.ofArray
               |> Set.toList
-              |> List.map(fun x -> ipToIndicator x "WordPress bruteforce login client IP")
+              |> List.map(fun x -> ipToIndicator x "Bruteforce" "WordPress bruteforce login client IP")
               |> List.choose id
     let lines = File.ReadAllLines(config.["xmlrpc_ddoslog"])
                 |> Array.filter(fun x -> x.StartsWith(today))
@@ -414,11 +434,11 @@ let wordpotlogs (date:DateTime): OtxPulse =
                   |> Array.map(fun x -> x.Split(' ').[1])
                   |> Set.ofArray
                   |> Set.toList
-                  |> List.map(fun x -> ipToIndicator x "WordPress xmlrpc.php DDoS client IP")
+                  |> List.map(fun x -> ipToIndicator x "Unknown" "WordPress xmlrpc.php DDoS client IP")
                   |> List.choose id
     let ddosvictims = lines
                       |> Array.map(fun x -> x.Split(' ').[4])
-                      |> Array.map(fun x -> urlToIndicators x "Wordpress xmlrpc.php DDoS victim" )
+                      |> Array.map(fun x -> urlToIndicators x "Unknown" "Wordpress xmlrpc.php DDoS victim" )
                       |> List.concat
                       |> Set.ofList
                       |> Set.toList
@@ -428,6 +448,9 @@ let wordpotlogs (date:DateTime): OtxPulse =
      tags = ["wordpress"; "honeypot"; "bruteforce"];
      references = [];
      TLP = "green";
+     attack_ids = ["T1110";];
+     groups = [];
+     malware_families = [];
      description = "WordPress honeypot logs for DDoS tracking and authentcation brute force from a US /32";
      indicators = List.filter (fun x -> Set.contains x.indicator exemptions <> true) (ips @ ddosips @ ddosvictims)}     
 
@@ -450,7 +473,7 @@ let apachelogs (date:DateTime): OtxPulse =
     let checkedRowToIndicator(rule:WwwidsRule, row:string []) : OtxIndicator option =
         try
             let ip = Net.IPAddress.Parse(row.[0])
-            ipToIndicator (ip.ToString()) (rule.name + " attempt client IP")
+            ipToIndicator (ip.ToString()) "Web Attack" (rule.name + " attempt client IP")
         with
         | :? StackOverflowException as ex -> None
     let rulehits = lines
@@ -471,7 +494,7 @@ let apachelogs (date:DateTime): OtxPulse =
                 |> Seq.collect (fun (rule, urls) -> unwind rule urls) 
                 |> Set.ofSeq                 
                 |> Set.toList
-                |> List.collect (fun (rule, x) ->  urlToIndicators x ("Injected URL - " + rule.name))
+                |> List.collect (fun (rule, x) ->  urlToIndicators x "Malware Hosting" ("Injected URL - " + rule.name))
                 |> Set.ofList
                 |> Seq.toList
     let contents = urls
@@ -495,7 +518,7 @@ let apachelogs (date:DateTime): OtxPulse =
                        |> Map.map (fun _ v -> Seq.length v)
                        |> Map.filter (fun _ v -> v > int(config.["httperrorrate"]))
                        |> Map.toList
-                       |> List.map (fun (x,_) -> ipToIndicator x "Excessive errors - possible probe activity" )
+                       |> List.map (fun (x,_) -> ipToIndicator x "Web Attack" "Excessive errors - possible probe activity" )
                        |> List.choose id
     GC.Collect()         
     {name = "Apache honeypot logs for " + today;
@@ -503,6 +526,9 @@ let apachelogs (date:DateTime): OtxPulse =
      tags = ["apache"; "honeypot"; "exploits"];
      references = [];
      TLP = "green";
+     attack_ids = [];
+     groups = [];
+     malware_families = [];
      description = "Apache honeypot logs for common exploit attempts from a US /32";
      indicators = List.filter (fun x -> Set.contains x.indicator exemptions <> true) (indicators @ fileindicators @ ircservers @ urls @ errorclients)}
 
@@ -515,14 +541,14 @@ let redislogs (date:DateTime): OtxPulse =
                   |> Array.filter(fun x -> x.Contains("[redispot.redisdeploy.RedisServerFactory] New connection"))
                   |> Array.map(fun x -> x.Split() |> Array.rev |> Array.toList |> List.head)
                   |> Set.ofArray
-                  |> Set.map (fun x -> ipToIndicator x "Redis brute force authentication activity")
+                  |> Set.map (fun x -> ipToIndicator x "Bruteforce" "Redis brute force authentication activity")
                   |> Set.toList
                   |> List.choose id 
     let urls = lines 
                |> Array.filter(fun x -> x.Contains("[RedisServer"))
                |> Array.map getUrl
                |> Seq.concat               
-               |> Seq.map (fun x -> urlToIndicators x "URL injected into Redis honeypot")
+               |> Seq.map (fun x -> urlToIndicators x "Malware Hosting" "URL injected into Redis honeypot")
                |> Seq.concat
                |> Set.ofSeq
                |> Set.toList
@@ -532,6 +558,9 @@ let redislogs (date:DateTime): OtxPulse =
      tags = ["redis"; "honeypot"];
      references = [];
      TLP = "green";
+     attack_ids = ["T1110";];
+     groups = [];
+     malware_families = [];
      description = "Redis honeypot authentication attempts from a US /32";
      indicators = List.filter(fun x -> Set.contains x.indicator exemptions <> true) (clients @ urls)}
 
@@ -544,7 +573,7 @@ let vnclogs (date:DateTime): OtxPulse =
                   |> Array.filter (fun x -> x.Contains("uth response:") || x.Contains("bad version"))
                   |> Array.map (fun x -> x.Split().[2].Split(':').[0])
                   |> Set.ofArray
-                  |> Set.map (fun x -> ipToIndicator x "VNC brute force authentication activity")
+                  |> Set.map (fun x -> ipToIndicator x "Bruteforce" "VNC brute force authentication activity")
                   |> Set.toList
                   |> List.choose id
     {name = "VNC honeypot logs for " + today;
@@ -552,6 +581,9 @@ let vnclogs (date:DateTime): OtxPulse =
      tags = ["vnc"; "honeypot"];
      references = [];
      TLP = "green";
+     attack_ids = ["T1110";];
+     groups = [];
+     malware_families = [];
      description = "VNC honeypot authentication attempts from a US /32";
      indicators = List.filter(fun x -> Set.contains x.indicator exemptions <> true) clients}    
 
@@ -566,7 +598,7 @@ let psqllogs (date:DateTime): OtxPulse =
                   |> Array.filter (fun x -> x.level = "info")
                   |> Array.map (fun x -> x.source_ip)
                   |> Set.ofArray
-                  |> Set.map (fun x -> ipToIndicator x "PostgresQL brute force authentication activity")
+                  |> Set.map (fun x -> ipToIndicator x "Bruteforce" "PostgresQL brute force authentication activity")
                   |> Set.toList
                   |> List.choose id
     {name = "PostgresQL honeypot logs for " + today;
@@ -574,6 +606,9 @@ let psqllogs (date:DateTime): OtxPulse =
      tags = ["postgres"; "honeypot"];
      references = [];
      TLP = "green";
+     attack_ids = ["T1110";];
+     groups = [];
+     malware_families = [];
      description = "PostgresQL honeypot authentication attempts from a US /32";
      indicators = List.filter(fun x -> Set.contains x.indicator exemptions <> true) clients}    
 
@@ -585,7 +620,7 @@ let rdplogs (date:DateTime): OtxPulse =
                 |> Array.filter(fun x -> x.Contains("Connection received from"))
                 |> Array.map (fun x -> x.Split().[6].Split(':').[0])
                 |> Set.ofArray
-                |> Set.map (fun x -> ipToIndicator x "RDP brute force authentication activity")
+                |> Set.map (fun x -> ipToIndicator x "Bruteforce" "RDP brute force authentication activity")
                 |> Set.toList
                 |> List.choose id
     {name = "RDP honeypot logs for " + today;
@@ -593,17 +628,20 @@ let rdplogs (date:DateTime): OtxPulse =
      tags = ["RDP"; "honeypot"];
      references = [];
      TLP = "green";
+     attack_ids = ["T1110";];
+     groups = [];
+     malware_families = [];
      description = "RDP honeypot authentication attempts from a US /32";
      indicators = List.filter(fun x -> Set.contains x.indicator exemptions <> true) clients}    
 
-let webshellbackdoorlogs (date:DateTime): OtxPulse = 
+let webshellbackdoorlogs (date:DateTime): OtxPulse =
     log 3 ">>> webshellbackdoorlogs"
     let today = date.ToString("yyyy/MM/dd")
 
-    let convertLine (line: string) : BackdoorRecordPayload = 
+    let convertLine (line: string) : BackdoorRecordPayload =
       try
         JsonConvert.DeserializeObject<BackdoorRecordPayload>(line)
-      with 
+      with
         | :? Newtonsoft.Json.JsonSerializationException -> JsonConvert.DeserializeObject<BackdoorRecordPayload>(line.Replace(":[]}", ":{}}"))
         | :? System.InvalidOperationException -> JsonConvert.DeserializeObject<BackdoorRecordPayload>("{}")
 
@@ -614,7 +652,7 @@ let webshellbackdoorlogs (date:DateTime): OtxPulse =
                 |> Array.map convertLine
                 |> Array.map (fun x -> x.client_ip)
                 |> Set.ofArray
-                |> Set.map (fun x -> ipToIndicator x "Webshell backdoor injection activity client")
+                |> Set.map (fun x -> ipToIndicator x "Scanning Host" "Webshell backdoor injection activity client")
                 |> Set.toList
                 |> List.choose id
 
@@ -622,9 +660,12 @@ let webshellbackdoorlogs (date:DateTime): OtxPulse =
          Public = true;
          tags = ["webshell"; "backdoor"; "honeypot"];
          references = [];
+         groups = [];
+         malware_families = ["Backdoor:PHP/WebShell"; "Backdoor:PHP/C99shell"];
+         attack_ids = [ "T1100" ];
          TLP = "green";
          description = "Webshell backdoor injection attempts from a US /32";
-         indicators = List.filter(fun x -> Set.contains x.indicator exemptions <> true) clients}  
+         indicators = List.filter(fun x -> Set.contains x.indicator exemptions <> true) clients}
 
 let upload (otx: OtxPulse) = 
     log 2 "uploading ..."
