@@ -473,7 +473,10 @@ let apachelogs (date:DateTime): OtxPulse =
     let checkedRowToIndicator(rule:WwwidsRule, row:string []) : OtxIndicator option =
         try
             let ip = Net.IPAddress.Parse(row.[0])
-            ipToIndicator (ip.ToString()) "Web Attack" (rule.name + " attempt client IP")
+            let optind = ipToIndicator (ip.ToString()) "Web Attack" (rule.name + " attempt client IP")
+            match optind with
+            | Some ind -> Some({ ind with excerpt = row.[6]})
+            | None     -> None
         with
         | :? StackOverflowException as ex -> None
     let rulehits = lines
