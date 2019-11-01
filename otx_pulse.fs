@@ -484,6 +484,7 @@ let apachelogs (date:DateTime): OtxPulse =
     let indicators = rulehits
                      |> Seq.map checkedRowToIndicator
                      |> Seq.choose id
+                     |> Seq.distinctBy (fun (x : OtxIndicator) -> x.indicator)
                      |> Set.ofSeq
                      |> Set.toList
     let unwind rule urls = Seq.map (fun x -> (rule, x)) urls                      
