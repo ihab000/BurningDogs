@@ -266,7 +266,7 @@ let telnetlogs (date:DateTime): OtxPulse =
               |> Array.filter(fun x -> x.Contains("HoneyPotTelnetFactory] New connection"))
               |> Array.map(fun x -> x.Split(' ').[4].Split(':').[3])
               |> Set.ofArray
-              |> Set.map(fun x -> ipToIndicator x "Bruteforce" "Telnet bruteforce client IP")
+              |> Set.map(fun x -> ipToIndicator x "bruteforce" "Telnet bruteforce client IP")
               |> Set.toList
               |> List.choose id
     log 3 ">>> read IPs"
@@ -282,7 +282,7 @@ let telnetlogs (date:DateTime): OtxPulse =
                     |> Seq.concat
                     |> Set.ofSeq
                     |> Set.toSeq
-                    |> Seq.map (fun x -> urlToIndicators x "Malware Hosting" "URL injected into Telnet honeypot") 
+                    |> Seq.map (fun x -> urlToIndicators x "malware_hosting" "URL injected into Telnet honeypot") 
                     |> List.concat
     log 3 ">>> read extraurls"
     let contents = extraurls
@@ -303,14 +303,13 @@ let telnetlogs (date:DateTime): OtxPulse =
                        |> Seq.concat
                        |> Seq.distinct
                        |> Seq.map (fun x -> x.Split(':'))
-                       |> Seq.map (fun [|x; y|] -> ipToIndicator x "Command & Control" ("Suspected malware C2 on port " + y))
+                       |> Seq.map (fun [|x; y|] -> ipToIndicator x "command_and_control" ("Suspected malware C2 on port " + y))
                        |> Seq.toList
                        |> List.choose id    
     log 3 ">>> got c2 indicators"        
     let allurls = urls @ extraurls
                   |> Set.ofList
                   |> Set.toList         
-    GC.Collect()         
     {name = "Telnet honeypot logs for " + today; 
      Public = true; 
      tags = ["Telnet"; "bruteforce"; "honeypot"]; 
@@ -333,7 +332,7 @@ let kippologs (date:DateTime): OtxPulse =
               |> Array.map(fun x -> x.Split(':').[0])
               |> Set.ofArray
               |> Set.toList
-              |> List.map(fun x -> ipToIndicator x "Bruteforce" "SSH bruteforce client IP")
+              |> List.map(fun x -> ipToIndicator x "bruteforce" "SSH bruteforce client IP")
               |> List.choose id 
     let urls = getKippoUrls "SSHChannel session" "URL injected into SSH honeypot" lines
     let contents = urls
@@ -359,7 +358,6 @@ let kippologs (date:DateTime): OtxPulse =
                      |> Seq.concat
                      |> Set.ofSeq
                      |> Set.toList
-    GC.Collect()         
     {name = "SSH honeypot logs for " + today; 
      Public = true; 
      tags = ["SSH"; "bruteforce"; "honeypot"]; 
@@ -382,13 +380,13 @@ let pmalogs (date:DateTime): OtxPulse =
                |> Array.map(fun x -> x.Split(' ').[1])
                |> Set.ofArray
                |> Set.toList
-               |> List.map(fun x -> ipToIndicator x "Web Attack" "phpMyAdmin attacker client IP")
+               |> List.map(fun x -> ipToIndicator x "web_attack" "phpMyAdmin attacker client IP")
                |> List.choose id
     let urls = lines
                |> Array.map getUrl
                |> Seq.concat
                |> Seq.distinct
-               |> Seq.map(fun x -> urlToIndicators x "Malware Hosting" "URL injected into phpMyAdmin page")
+               |> Seq.map(fun x -> urlToIndicators x "malware_hosting" "URL injected into phpMyAdmin page")
                |> Seq.toList 
                |> List.concat
     let contents = urls
@@ -405,7 +403,6 @@ let pmalogs (date:DateTime): OtxPulse =
                      |> List.collect botToIndicator 
                      |> Set.ofList
                      |> Set.toList
-    GC.Collect()         
     {name = "phpMyAdmin honeypot logs for " + today;
      Public = true;
      tags = ["phpMyAdmin"; "honeypot"];
@@ -426,7 +423,7 @@ let wordpotlogs (date:DateTime): OtxPulse =
               |> Array.map(fun x -> x.Split(' ').[1])
               |> Set.ofArray
               |> Set.toList
-              |> List.map(fun x -> ipToIndicator x "Bruteforce" "WordPress bruteforce login client IP")
+              |> List.map(fun x -> ipToIndicator x "bruteforce" "WordPress bruteforce login client IP")
               |> List.choose id
     let lines = File.ReadAllLines(config.["xmlrpc_ddoslog"])
                 |> Array.filter(fun x -> x.StartsWith(today))
@@ -434,15 +431,14 @@ let wordpotlogs (date:DateTime): OtxPulse =
                   |> Array.map(fun x -> x.Split(' ').[1])
                   |> Set.ofArray
                   |> Set.toList
-                  |> List.map(fun x -> ipToIndicator x "Unknown" "WordPress xmlrpc.php DDoS client IP")
+                  |> List.map(fun x -> ipToIndicator x "unknown" "WordPress xmlrpc.php DDoS client IP")
                   |> List.choose id
     let ddosvictims = lines
                       |> Array.map(fun x -> x.Split(' ').[4])
-                      |> Array.map(fun x -> urlToIndicators x "Unknown" "Wordpress xmlrpc.php DDoS victim" )
+                      |> Array.map(fun x -> urlToIndicators x "unknown" "Wordpress xmlrpc.php DDoS victim" )
                       |> List.concat
                       |> Set.ofList
                       |> Set.toList
-    GC.Collect()         
     {name = "WordPress honeypot logs for " + today;
      Public = true;
      tags = ["wordpress"; "honeypot"; "bruteforce"];
@@ -473,7 +469,7 @@ let apachelogs (date:DateTime): OtxPulse =
     let checkedRowToIndicator(rule:WwwidsRule, row:string []) : OtxIndicator option =
         try
             let ip = Net.IPAddress.Parse(row.[0])
-            let optind = ipToIndicator (ip.ToString()) "Web Attack" (rule.name + " attempt client IP")
+            let optind = ipToIndicator (ip.ToString()) "web_attack" (rule.name + " attempt client IP")
             match optind with
             | Some ind -> Some({ ind with excerpt = row.[6]})
             | None     -> None
@@ -497,7 +493,7 @@ let apachelogs (date:DateTime): OtxPulse =
                 |> Seq.collect (fun (rule, urls) -> unwind rule urls) 
                 |> Set.ofSeq                 
                 |> Set.toList
-                |> List.collect (fun (rule, x) ->  urlToIndicators x "Malware Hosting" ("Injected URL - " + rule.name))
+                |> List.collect (fun (rule, x) ->  urlToIndicators x "malware_hosting" ("Injected URL - " + rule.name))
                 |> Set.ofList
                 |> Seq.toList
     let contents = urls
@@ -521,9 +517,8 @@ let apachelogs (date:DateTime): OtxPulse =
                        |> Map.map (fun _ v -> Seq.length v)
                        |> Map.filter (fun _ v -> v > int(config.["httperrorrate"]))
                        |> Map.toList
-                       |> List.map (fun (x,_) -> ipToIndicator x "Web Attack" "Excessive errors - possible probe activity" )
+                       |> List.map (fun (x,_) -> ipToIndicator x "web_attack" "Excessive errors - possible probe activity" )
                        |> List.choose id
-    GC.Collect()         
     {name = "Apache honeypot logs for " + today;
      Public = true;
      tags = ["apache"; "honeypot"; "exploits"];
@@ -544,14 +539,14 @@ let redislogs (date:DateTime): OtxPulse =
                   |> Array.filter(fun x -> x.Contains("[redispot.redisdeploy.RedisServerFactory] New connection"))
                   |> Array.map(fun x -> x.Split() |> Array.rev |> Array.toList |> List.head)
                   |> Set.ofArray
-                  |> Set.map (fun x -> ipToIndicator x "Bruteforce" "Redis brute force authentication activity")
+                  |> Set.map (fun x -> ipToIndicator x "bruteforce" "Redis brute force authentication activity")
                   |> Set.toList
                   |> List.choose id 
     let urls = lines 
                |> Array.filter(fun x -> x.Contains("[RedisServer"))
                |> Array.map getUrl
                |> Seq.concat               
-               |> Seq.map (fun x -> urlToIndicators x "Malware Hosting" "URL injected into Redis honeypot")
+               |> Seq.map (fun x -> urlToIndicators x "malware_hosting" "URL injected into Redis honeypot")
                |> Seq.concat
                |> Set.ofSeq
                |> Set.toList
@@ -576,7 +571,7 @@ let vnclogs (date:DateTime): OtxPulse =
                   |> Array.filter (fun x -> x.Contains("uth response:") || x.Contains("bad version"))
                   |> Array.map (fun x -> x.Split().[2].Split(':').[0])
                   |> Set.ofArray
-                  |> Set.map (fun x -> ipToIndicator x "Bruteforce" "VNC brute force authentication activity")
+                  |> Set.map (fun x -> ipToIndicator x "bruteforce" "VNC brute force authentication activity")
                   |> Set.toList
                   |> List.choose id
     {name = "VNC honeypot logs for " + today;
@@ -601,7 +596,7 @@ let psqllogs (date:DateTime): OtxPulse =
                   |> Array.filter (fun x -> x.level = "info")
                   |> Array.map (fun x -> x.source_ip)
                   |> Set.ofArray
-                  |> Set.map (fun x -> ipToIndicator x "Bruteforce" "PostgresQL brute force authentication activity")
+                  |> Set.map (fun x -> ipToIndicator x "bruteforce" "PostgresQL brute force authentication activity")
                   |> Set.toList
                   |> List.choose id
     {name = "PostgresQL honeypot logs for " + today;
@@ -623,7 +618,7 @@ let rdplogs (date:DateTime): OtxPulse =
                 |> Array.filter(fun x -> x.Contains("Connection received from"))
                 |> Array.map (fun x -> x.Split().[6].Split(':').[0])
                 |> Set.ofArray
-                |> Set.map (fun x -> ipToIndicator x "Bruteforce" "RDP brute force authentication activity")
+                |> Set.map (fun x -> ipToIndicator x "bruteforce" "RDP brute force authentication activity")
                 |> Set.toList
                 |> List.choose id
     {name = "RDP honeypot logs for " + today;
@@ -655,7 +650,7 @@ let webshellbackdoorlogs (date:DateTime): OtxPulse =
                 |> Array.map convertLine
                 |> Array.map (fun x -> x.client_ip)
                 |> Set.ofArray
-                |> Set.map (fun x -> ipToIndicator x "Scanning Host" "Webshell backdoor injection activity client")
+                |> Set.map (fun x -> ipToIndicator x "scanning_host" "Webshell backdoor injection activity client")
                 |> Set.toList
                 |> List.choose id
 
